@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { Plus, User, Mail, Hash } from 'lucide-react';
+import { Plus, User, Mail, Hash, Edit2, Trash2, X } from 'lucide-react';
 import InternDetail from './InternDetail';
 
 interface Intern {
@@ -18,8 +18,10 @@ interface Props {
 
 const InternList: React.FC<Props> = ({ data, onRefresh, managerId, batchId }) => {
     const [showAddModal, setShowAddModal] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
     const [selectedInternId, setSelectedInternId] = useState<string | null>(null);
     const [newIntern, setNewIntern] = useState({ Name: '', Email: '', EmpID: '' });
+    const [editingIntern, setEditingIntern] = useState<Intern | null>(null);
 
     const handleAdd = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -34,6 +36,32 @@ const InternList: React.FC<Props> = ({ data, onRefresh, managerId, batchId }) =>
             onRefresh();
         } catch (error: any) {
             alert(error.response?.data?.error || "Failed to add intern");
+        }
+    };
+
+    const handleEdit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingIntern) return;
+        try {
+            await axios.put('http://localhost:5000/api/interns', {
+                ...editingIntern,
+                manager_id: managerId,
+                batch_id: batchId
+            });
+            setShowEditModal(false);
+            onRefresh();
+        } catch (error: any) {
+            alert(error.response?.data?.error || "Failed to edit intern");
+        }
+    };
+
+    const handleDelete = async (empId: string) => {
+        if (!window.confirm("Are you sure? This will delete the intern and all their scores/feedback.")) return;
+        try {
+            await axios.delete(`http://localhost:5000/api/interns?emp_id=${empId}&manager_id=${managerId}&batch_id=${batchId}`);
+            onRefresh();
+        } catch (error: any) {
+            alert(error.response?.data?.error || "Failed to delete intern");
         }
     };
 
@@ -56,6 +84,7 @@ const InternList: React.FC<Props> = ({ data, onRefresh, managerId, batchId }) =>
                             <th>Name</th>
                             <th>Emp ID</th>
                             <th>Email Address</th>
+                            <th style={{ textAlign: 'right' }}>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -69,6 +98,22 @@ const InternList: React.FC<Props> = ({ data, onRefresh, managerId, batchId }) =>
                                 </td>
                                 <td style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>{intern.EmpID}</td>
                                 <td style={{ color: 'var(--primary)' }}>{intern.Email}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                        <button
+                                            onClick={() => { setEditingIntern(intern); setShowEditModal(true); }}
+                                            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', color: 'var(--text-muted)', padding: '0.4rem', borderRadius: '0.5rem', cursor: 'pointer' }}
+                                        >
+                                            <Edit2 size={14} />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(intern.EmpID)}
+                                            style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#ef4444', padding: '0.4rem', borderRadius: '0.5rem', cursor: 'pointer' }}
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
@@ -83,7 +128,12 @@ const InternList: React.FC<Props> = ({ data, onRefresh, managerId, batchId }) =>
             {showAddModal && (
                 <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
                     <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
-                        <h2 style={{ marginBottom: '1.5rem' }}>Register New Intern</h2>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                            <h2 style={{ margin: 0 }}>Register New Intern</h2>
+                            <button onClick={() => setShowAddModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                                <X size={20} />
+                            </button>
+                        </div>
                         <form onSubmit={handleAdd}>
                             <div className="input-group">
                                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -122,8 +172,59 @@ const InternList: React.FC<Props> = ({ data, onRefresh, managerId, batchId }) =>
                                 />
                             </div>
                             <div style={{ display: 'flex', gap: '1rem' }}>
-                                <button className="btn" type="submit" style={{ flex: 1 }}>Register</button>
-                                <button className="btn" type="button" style={{ flex: 1, background: 'transparent' }} onClick={() => setShowAddModal(false)}>Cancel</button>
+                                <button className="btn" type="submit" style={{ flex: 1 }}>Register Intern</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {showEditModal && editingIntern && (
+                <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                            <h2 style={{ margin: 0 }}>Edit Intern Bio</h2>
+                            <button onClick={() => setShowEditModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <form onSubmit={handleEdit}>
+                            <div className="input-group">
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <User size={14} /> Full Name
+                                </label>
+                                <input
+                                    type="text"
+                                    value={editingIntern.Name}
+                                    onChange={e => setEditingIntern({ ...editingIntern, Name: e.target.value })}
+                                    required
+                                />
+                            </div>
+                            <div className="input-group">
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <Mail size={14} /> Email Address
+                                </label>
+                                <input
+                                    type="email"
+                                    value={editingIntern.Email}
+                                    onChange={e => setEditingIntern({ ...editingIntern, Email: e.target.value })}
+                                    required
+                                />
+                            </div>
+                            <div className="input-group" style={{ marginBottom: '2rem' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <Hash size={14} /> Employee ID
+                                </label>
+                                <input
+                                    type="text"
+                                    value={editingIntern.EmpID}
+                                    disabled
+                                    style={{ opacity: 0.5, cursor: 'not-allowed' }}
+                                />
+                                <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>ID cannot be changed as it links to performance records.</p>
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button className="btn" type="submit" style={{ flex: 1 }}>Update Details</button>
                             </div>
                         </form>
                     </div>

@@ -1,0 +1,40 @@
+nohup: ignoring input
+INFO:     Started server process [50859]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:5000 (Press CTRL+C to quit)
+[DEBUG] Fetching subjects for MID: 699712c78369bb0e38e9e0c1, BID: 6997faaf71412202cb4aaccd
+[DEBUG] Returning 9 subjects.
+INFO:     127.0.0.1:58102 - "GET /api/subjects?manager_id=699712c78369bb0e38e9e0c1&batch_id=6997faaf71412202cb4aaccd HTTP/1.1" 200 OK
+[DEBUG] Fetching subjects for MID: 699712c78369bb0e38e9e0c1, BID: 6997faaf71412202cb4aaccd
+[DEBUG] Returning 9 subjects.
+INFO:     127.0.0.1:58102 - "GET /api/subjects?manager_id=699712c78369bb0e38e9e0c1&batch_id=6997faaf71412202cb4aaccd HTTP/1.1" 200 OK
+[DEBUG] Upload started. MID: 699712c78369bb0e38e9e0c1, BID: 6997faaf71412202cb4aaccd
+[DEBUG] Excel Columns: ['Name', 'Email', 'EmpID', 'Python (Total: 30)', 'React (Total: 30)', 'Fastapi (Total: 30)', 'Shell (Total: 30)', 'dummy1 (Total: 30)', 'dummy2 (Total: 30)', 'dummy3 (Total: 30)']
+INFO:     127.0.0.1:36068 - "POST /api/upload-interns HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36068 - "GET /api/scores?manager_id=699712c78369bb0e38e9e0c1&batch_id=6997faaf71412202cb4aaccd HTTP/1.1" 200 OK
+[DEBUG] Fetching subjects for MID: 699712c78369bb0e38e9e0c1, BID: 6997faaf71412202cb4aaccd
+[DEBUG] Returning 9 subjects.
+INFO:     127.0.0.1:52698 - "GET /api/subjects?manager_id=699712c78369bb0e38e9e0c1&batch_id=6997faaf71412202cb4aaccd HTTP/1.1" 200 OK
+[DEBUG] Fetching subjects for MID: 699712c78369bb0e38e9e0c1, BID: 6997faaf71412202cb4aaccd
+[DEBUG] Returning 9 subjects.
+INFO:     127.0.0.1:52698 - "GET /api/subjects?manager_id=699712c78369bb0e38e9e0c1&batch_id=6997faaf71412202cb4aaccd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42478 - "OPTIONS /api/update-score HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42482 - "POST /api/update-score HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42482 - "GET /api/scores?manager_id=699712c78369bb0e38e9e0c1&batch_id=6997faaf71412202cb4aaccd HTTP/1.1" 200 OK
+[DEBUG] Fetching subjects for MID: 699712c78369bb0e38e9e0c1, BID: 6997faaf71412202cb4aaccd
+[DEBUG] Returning 9 subjects.
+INFO:     127.0.0.1:42482 - "GET /api/subjects?manager_id=699712c78369bb0e38e9e0c1&batch_id=6997faaf71412202cb4aaccd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42482 - "POST /api/update-score HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42482 - "GET /api/scores?manager_id=699712c78369bb0e38e9e0c1&batch_id=6997faaf71412202cb4aaccd HTTP/1.1" 200 OK
+[DEBUG] Fetching subjects for MID: 699712c78369bb0e38e9e0c1, BID: 6997faaf71412202cb4aaccd
+[DEBUG] Returning 9 subjects.
+INFO:     127.0.0.1:42482 - "GET /api/subjects?manager_id=699712c78369bb0e38e9e0c1&batch_id=6997faaf71412202cb4aaccd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42482 - "GET /api/reports/INT021?manager_id=699712c78369bb0e38e9e0c1&batch_id=6997faaf71412202cb4aaccd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42482 - "GET /api/reports/INT021?manager_id=699712c78369bb0e38e9e0c1&batch_id=6997faaf71412202cb4aaccd HTTP/1.1" 200 OK
+[DEBUG] Fetching subjects for MID: 699712c78369bb0e38e9e0c1, BID: 6997faaf71412202cb4aaccd
+[DEBUG] Returning 9 subjects.
+INFO:     127.0.0.1:54878 - "GET /api/subjects?manager_id=699712c78369bb0e38e9e0c1&batch_id=6997faaf71412202cb4aaccd HTTP/1.1" 200 OK
+[DEBUG] Fetching subjects for MID: 699712c78369bb0e38e9e0c1, BID: 6997faaf71412202cb4aaccd
+[DEBUG] Returning 9 subjects.
+INFO:     127.0.0.1:54878 - "GET /api/subjects?manager_id=699712c78369bb0e38e9e0c1&batch_id=6997faaf71412202cb4aaccd HTTP/1.1" 200 OK

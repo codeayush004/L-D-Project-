@@ -28,7 +28,7 @@ app.add_middleware(
 )
 
 # MongoDB Setup
-client = MongoClient(os.getenv('MONGO_URI'))
+client = MongoClient(os.getenv('MONGO_URI'), tlsAllowInvalidCertificates=True)
 db = client[os.getenv("DATABASE_NAME", "ld_platform")]
 managers_collection = db.managers
 interns_collection = db.interns
@@ -104,6 +104,21 @@ async def index():
 async def health_check():
     return {"status": "ok", "message": "L&D Backend (FastAPI) is running"}
 
+@app.post("/api/debug/fix-orphans")
+async def fix_orphans(manager_id: str, batch_id: str):
+    # This repairs legacy data that is missing batch_id
+    res1 = interns_collection.update_many({'manager_id': manager_id, 'batch_id': {'$exists': False}}, {'$set': {'batch_id': batch_id}})
+    res2 = scores_collection.update_many({'manager_id': manager_id, 'batch_id': {'$exists': False}}, {'$set': {'batch_id': batch_id}})
+    res3 = subjects_collection.update_many({'manager_id': manager_id, 'batch_id': {'$exists': False}}, {'$set': {'batch_id': batch_id}})
+    return {"interns_fixed": res1.modified_count, "scores_fixed": res2.modified_count, "subjects_fixed": res3.modified_count}
+
+@app.get("/api/debug/inspect-db")
+async def inspect_db():
+    batches = list(batches_collection.find({}, {'_id': 0}))
+    subjects = list(subjects_collection.find({}, {'_id': 0}))
+    interns_count = interns_collection.count_documents({})
+    return {"batches": batches, "subjects": subjects, "interns_count": interns_count}
+
 # --- Auth Routes ---
 
 @app.post("/api/register")
@@ -157,12 +172,28 @@ async def get_batches(manager_id: str):
 
 @app.post("/api/interns", status_code=201)
 async def create_intern(data: InternModel):
-    # Check if exists in this batch
-    if interns_collection.find_one({'EmpID': data.EmpID, 'manager_id': data.manager_id, 'batch_id': data.batch_id}):
-        raise HTTPException(status_code=400, detail="Intern with this EmpID already exists in this batch")
-        
-    interns_collection.insert_one(data.model_dump())
-    return {"message": "Intern added successfully"}
+    # Idempotent Insert (Upsert)
+    interns_collection.update_one(
+        {'EmpID': data.EmpID, 'manager_id': data.manager_id, 'batch_id': data.batch_id},
+        {'$set': data.model_dump()},
+        upsert=True
+    )
+    return {"message": "Intern saved (Update/Insert successful)"}
+
+@app.put("/api/interns")
+async def update_intern(data: InternModel):
+    interns_collection.update_one(
+        {'EmpID': data.EmpID, 'manager_id': data.manager_id, 'batch_id': data.batch_id},
+        {'$set': {'Name': data.Name, 'Email': data.Email}}
+    )
+    return {"message": "Intern bio updated"}
+
+@app.delete("/api/interns")
+async def delete_intern(emp_id: str, manager_id: str, batch_id: str):
+    interns_collection.delete_one({'EmpID': emp_id, 'manager_id': manager_id, 'batch_id': batch_id})
+    scores_collection.delete_one({'EmpID': emp_id, 'manager_id': manager_id, 'batch_id': batch_id})
+    feedback_collection.delete_many({'EmpID': emp_id, 'manager_id': manager_id, 'batch_id': batch_id})
+    return {"message": "Intern and all associated data deleted"}
 
 @app.get("/api/interns")
 async def get_interns(manager_id: str, batch_id: str):
@@ -191,47 +222,66 @@ async def get_scores(manager_id: str, batch_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/subjects")
+async def get_subjects(manager_id: str, batch_id: str):
+    try:
+        print(f"[DEBUG] Fetching subjects for MID: {manager_id}, BID: {batch_id}")
+        doc = subjects_collection.find_one({'manager_id': manager_id, 'batch_id': batch_id})
+        if not doc: 
+            print("[DEBUG] No subject document found.")
+            return []
+        
+        # Merge 'list' and legacy 'subjects' keys
+        raw_list = doc.get('list') or doc.get('subjects') or []
+        standardized = []
+        for item in raw_list:
+            if isinstance(item, dict):
+                standardized.append(item)
+            else:
+                standardized.append({"name": str(item), "total_marks": 100})
+        print(f"[DEBUG] Returning {len(standardized)} subjects.")
+        return standardized
+    except Exception as e:
+        print(f"[DEBUG] Error in get_subjects: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/update-score")
 async def update_score(data: ScoreUpdateModel):
     try:
-        # Update scores per intern
+        # 1. Update the actual score
         scores_collection.update_one(
             {'EmpID': data.EmpID, 'manager_id': data.manager_id, 'batch_id': data.batch_id},
             {'$set': {f'scores.{data.subject}': data.score}},
             upsert=True
         )
         
-        # Track subjects with total_marks
+        # 2. Sync subjects list (ensure subject exists and has total_marks)
         if data.total_marks is not None:
+            subj_doc = subjects_collection.find_one({'manager_id': data.manager_id, 'batch_id': data.batch_id})
+            existing_list = []
+            if subj_doc:
+                existing_list = subj_doc.get('list') or subj_doc.get('subjects') or []
+            
+            new_list = []
+            found = False
+            for item in existing_list:
+                iname = item['name'] if isinstance(item, dict) else item
+                if iname == data.subject:
+                    found = True
+                    new_list.append({"name": data.subject, "total_marks": int(data.total_marks)})
+                else:
+                    new_list.append(item if isinstance(item, dict) else {"name": item, "total_marks": 100})
+            
+            if not found:
+                new_list.append({"name": data.subject, "total_marks": int(data.total_marks)})
+                
             subjects_collection.update_one(
                 {'manager_id': data.manager_id, 'batch_id': data.batch_id},
-                {'$pull': {'list': {'$in': [{'name': data.subject}, data.subject]}}},
-                upsert=True
-            )
-            subjects_collection.update_one(
-                {'manager_id': data.manager_id, 'batch_id': data.batch_id},
-                {'$addToSet': {'list': {'name': data.subject, 'total_marks': int(data.total_marks)}}},
+                {'$set': {'list': new_list}, '$unset': {'subjects': ""}},
                 upsert=True
             )
         
         return {"message": "Score updated"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/subjects")
-async def get_subjects(manager_id: str, batch_id: str):
-    try:
-        res = subjects_collection.find_one({'manager_id': manager_id, 'batch_id': batch_id}, {'_id': 0})
-        raw_list = res.get('list', []) if res else []
-        
-        standardized_list = []
-        for item in raw_list:
-            if isinstance(item, dict):
-                standardized_list.append(item)
-            else:
-                standardized_list.append({'name': item, 'total_marks': 100})
-                
-        return standardized_list
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -380,22 +430,95 @@ async def upload_interns(
     file: UploadFile = File(...)
 ):
     try:
+        print(f"[DEBUG] Upload started. MID: {manager_id}, BID: {batch_id}")
         contents = await file.read()
         df = pd.read_excel(io.BytesIO(contents))
-        required_columns = ['Name', 'Email', 'EmpID']
-        if not all(col in df.columns for col in required_columns):
-            raise HTTPException(status_code=400, detail=f"Invalid format. Required: {required_columns}")
+        print(f"[DEBUG] Excel Columns: {df.columns.tolist()}")
         
-        interns_data = df[required_columns].to_dict('records')
-        for intern in interns_data:
-            intern['manager_id'] = manager_id
-            intern['batch_id'] = batch_id
-            interns_collection.update_one(
-                {'EmpID': str(intern['EmpID']), 'manager_id': manager_id, 'batch_id': batch_id},
-                {'$set': intern},
+        # 1. Validate required Bio columns
+        required_bio = ['Name', 'Email', 'EmpID']
+        if not all(col in df.columns for col in required_bio):
+            raise HTTPException(status_code=400, detail=f"Excel must at least contain: {required_bio}")
+        
+        # 2. Identify potential Subject columns (any column NOT in bio)
+        potential_subjects = [col.strip() for col in df.columns if col.strip() not in required_bio and col.strip() not in ['manager_id', 'batch_id']]
+        
+        # 3. Get currently registered subjects for this batch
+        subj_doc = subjects_collection.find_one({'manager_id': manager_id, 'batch_id': batch_id})
+        # Merge 'list' and legacy 'subjects' keys
+        raw_existing = []
+        if subj_doc:
+            raw_existing = subj_doc.get('list') or subj_doc.get('subjects') or []
+        
+        existing_list = []
+        existing_names = []
+        for s in raw_existing:
+            name = s['name'] if isinstance(s, dict) else s
+            if name not in existing_names:
+                existing_names.append(name)
+                existing_list.append(s if isinstance(s, dict) else {"name": s, "total_marks": 100})
+        
+        # 4. Auto-register NEW subjects found in Excel
+        new_subjects_added = False
+        for col in potential_subjects:
+            # Clean subject name: "Python (Total: 30)" -> "Python"
+            clean_name = col.split('(')[0].strip()
+            if clean_name not in [s['name'] for s in existing_list]:
+                # Extract total marks if present " (Total: 50)"
+                total = 100
+                if '(' in col and 'Total' in col:
+                    try: total = int(col.split(':')[-1].replace(')', '').strip())
+                    except: total = 100
+                
+                existing_list.append({"name": clean_name, "total_marks": total})
+                new_subjects_added = True
+        
+        if new_subjects_added or not subj_doc:
+            print(f"[DEBUG] Updating subjects list for BID {batch_id}")
+            subjects_collection.update_one(
+                {'manager_id': manager_id, 'batch_id': batch_id},
+                {'$set': {'list': existing_list}, '$unset': {'subjects': ""}},
                 upsert=True
             )
-        return {"message": "Interns uploaded"}
+
+        # 5. Process Interns and Scores
+        interns_data = df.to_dict('records')
+        for row in interns_data:
+            emp_id = str(row['EmpID']).strip()
+            
+            # Update Bio
+            intern_bio = {
+                'Name': str(row['Name']).strip(),
+                'Email': str(row['Email']).strip(),
+                'EmpID': emp_id,
+                'manager_id': manager_id,
+                'batch_id': batch_id
+            }
+            interns_collection.update_one(
+                {'EmpID': emp_id, 'manager_id': manager_id, 'batch_id': batch_id},
+                {'$set': intern_bio},
+                upsert=True
+            )
+            
+            # Update Scores
+            scores_to_save = {}
+            for col in df.columns:
+                stripped_col = col.strip()
+                if stripped_col in df.columns: # Bio check is already in potential_subjects logic
+                    clean_name = stripped_col.split('(')[0].strip()
+                    if clean_name in [s['name'] for s in existing_list]:
+                        val = row[col]
+                        if pd.notnull(val) and (isinstance(val, (int, float, complex)) or hasattr(val, '__int__')):
+                            scores_to_save[f"scores.{clean_name}"] = float(val)
+            
+            if scores_to_save:
+                scores_collection.update_one(
+                    {'EmpID': emp_id, 'manager_id': manager_id, 'batch_id': batch_id},
+                    {'$set': scores_to_save},
+                    upsert=True
+                )
+                
+        return {"message": f"Successfully processed {len(interns_data)} interns and auto-registered {len(potential_subjects)} subjects."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -475,17 +598,54 @@ async def export_scores(manager_id: str, batch_id: str):
 @app.post("/api/chat")
 async def chat(data: ChatQueryModel):
     try:
+        # Fetch data strictly for this batch and manager
         interns = list(interns_collection.find({'manager_id': data.manager_id, 'batch_id': data.batch_id}, {'_id': 0}))
         scores = list(scores_collection.find({'manager_id': data.manager_id, 'batch_id': data.batch_id}, {'_id': 0}))
         feedbacks = list(feedback_collection.find({'manager_id': data.manager_id, 'batch_id': data.batch_id}, {'_id': 0}))
+        batch = batches_collection.find_one({'batch_id': data.batch_id})
+        batch_name = batch['name'] if batch else "Unknown Batch"
+
+        # Organize scores and feedback by EmpID for efficient joining
+        score_map = {s['EmpID']: s.get('scores', {}) for s in scores}
+        feedback_map = {}
+        for f in feedbacks:
+            eid = f['EmpID']
+            if eid not in feedback_map: feedback_map[eid] = []
+            feedback_map[eid].append(f"{f.get('column', 'General')}: {f['text']}")
+
+        # Build unified Intern Profiles for the AI
+        unified_profiles = []
+        for i in interns:
+            eid = i['EmpID']
+            profile = {
+                "Name": i['Name'],
+                "EmpID": eid,
+                "Email": i['Email'],
+                "Scores": score_map.get(eid, {}),
+                "Feedback": feedback_map.get(eid, [])
+            }
+            unified_profiles.append(profile)
+
+        # Create a more structured, readable context for the LLM
+        context = f"Active Batch: {batch_name}\n\nIntern Profiles:\n"
+        for p in unified_profiles:
+            context += f"- {p['Name']} ({p['EmpID']}):\n"
+            context += f"  Scores: {json.dumps(p['Scores'])}\n"
+            context += f"  Feedback History: {'; '.join(p['Feedback']) if p['Feedback'] else 'No feedback recorded.'}\n\n"
         
-        context = f"Batch Data:\nInterns: {json.dumps(interns)}\nScores: {json.dumps(scores)}\nFeedbacks: {json.dumps(feedbacks)}"
-        
+        system_prompt = (
+            "You are a professional L&D Data Scientist and Executive Assistant. "
+            f"You are currently analyzing data ONLY for the batch '{batch_name}'. "
+            "Your goal is to provide deep, actionable insights based on the provided Intern Profiles. "
+            "Strictly avoid mentioning any data or interns not found in the current context. "
+            "Focus on identifying top performers, areas of improvement, and correlations between qualitative feedback and quantitative scores."
+        )
+
         completion = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": "You are an L&D assistant. Analyze provided data and answer manager queries."},
-                {"role": "user", "content": f"Context: {context}\n\nQuery: {data.query}"}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Context:\n{context}\n\nManager Query: {data.query}"}
             ]
         )
         return {"response": completion.choices[0].message.content}
