@@ -69,7 +69,7 @@ function App() {
       setPassword('');
       localStorage.setItem('manager', JSON.stringify(res.data));
     } catch (error: any) {
-      alert(error.response?.data?.error || "Auth failed");
+      alert(error.response?.data?.detail || "Auth failed");
     }
   };
 
